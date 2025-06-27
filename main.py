@@ -1,32 +1,27 @@
-from typing import List
-from fastapi import Body, Depends, FastAPI, HTTPException, Response, status
-from psycopg2.extras import RealDictCursor
-import psycopg2
-import time
-from config.db import engine, get_db
+from fastapi import FastAPI
+from config.database import engine
 import config.models as models
-from sqlalchemy.orm import Session
-from config.schemas import CreatePost, CreateUsers, PostResponse, UserResponse
-from config.utils import hash_method
-from routers import user, post, auth
+from routers import user, post, auth, likes
+from fastapi.middleware.cors import CORSMiddleware
 
-
+# This is responsible for creating the models
 models.Base.metadata.create_all(bind=engine)
+# this wont work now cos its allembic thats doing it now
 
 app = FastAPI()
 
+# this is a list of domain that can access your domain
+origins = ['*']
 
-while True:
-    try:
-        conn = psycopg2.connect(host='localhost', database='fastapi', user='postgres',
-                                password='qwerty12345', cursor_factory=RealDictCursor)
-        cursor = conn.cursor()
-        print("Database connection successfull")
-        break
-    except Exception as e:
-        print("connection Failed: ", e)
-        time.sleep(2)
+app.add_middleware(
+    CORSMiddleware,
+    allowed_origins=origins,
+    allow_credentials=True,
+    allow_method=["*"],
+    allowed_headers=["*"],
+)
 
 app.include_router(post.router)
 app.include_router(user.router)
 app.include_router(auth.router)
+app.include_router(likes.router)

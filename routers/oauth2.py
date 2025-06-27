@@ -3,22 +3,26 @@ from fastapi import Depends
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from fastapi.security import OAuth2PasswordBearer
-from config import schemas
+from requests import Session
+from config import database, schemas
 from fastapi import status, HTTPException
+from config import models
+from config.settings import settings
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl='login')
 
-SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+SECRET_KEY = settings.secret_key
+ALGORITHM = settings.jwt_algorithm
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes
 
 def create_access_token(data: dict):
     
     # copy the data
     to_encode = data.copy()
+    print(to_encode)
 
     # extract an expire date
-    expire = datetime.now() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
 
     # update the copied data
     to_encode.update({"exp": expire})
@@ -31,27 +35,37 @@ def create_access_token(data: dict):
 
 
 
-def get_current_user(token: str = Depends(oauth2_scheme)):
-    crendentials_exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Could not validate Invalid", headers={"WWW-Authenticate": "Bearer"})
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(database.get_db)):
+    crendentials_exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, 
+    detail=f"Could not validate Invalid",
+    headers={"WWW-Authenticate": "Bearer"})
+    print("token before verification: ", token)
 
-    return verify_access_token(token, crendentials_exception)
+    token = verify_access_token(token, crendentials_exception)
+    print("token: ", token)#  user_id
+    user = db.query(models.Users).filter(models.Users.id == token.id).first()
 
+    return user
 
-def verify_access_token(token: str, credentials_exceptions):
+# to verify the access token
+def verify_access_token(token: str, credentials_exception):
     
     try:
         # decode the jwt token
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        print("payload: ", payload)
 
         # Extract the user_id
-        id: str = payload.get('user_id')
+        user_id: str = payload.get('user_id')
 
-        if id is None:
-            raise credentials_exceptions
+        if user_id is None:
+            raise credentials_exception
         
         # validate the 'id' using the TokenData schemas
-        token_data = schemas.TokenData(id=id)
+        token_data = schemas.TokenData(id=user_id)
+        
     except JWTError:
-        raise credentials_exceptions
+        raise credentials_exception
     
+    #return the user_id
     return token_data

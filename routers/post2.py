@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import Depends, HTTPException, Response, status, APIRouter
+from fastapi import Body, Depends, HTTPException, Response, status, APIRouter
 from sqlalchemy import func
 from config.database import engine, get_db
 from config import models
@@ -13,29 +13,16 @@ router = APIRouter()
 
 @router.get("/sqlalchemy", response_model=List[PostLikesResponse])
  #  db: Session = Depends(get_db): this create a session to the database so, we could communicate with the database
-def test_posts(
-    db: Session = Depends(get_db),
-    current_user: int = Depends(oauth2.get_current_user), 
-    limit: int = 10,
-    skip: int = 0,
-    search: Optional[str] = ""
-    ):
-
+def test_posts(db: Session = Depends(get_db), current_user: int = Depends(oauth2.get_current_user), limit: int = 10, skip: int = 0,
+    search: Optional[str] = ""):
     print("user email: ", current_user.email)
     print(limit)
     # posts = db.query(models.Post).filter(models.Post.title.icontains(search)).limit(limit).offset(skip).all()
     
     # joining both posts and likes table and grouping by post.id to get the amount of likes for each post
-    posts_likes = (
-        db.query(models.Post, func.count(models.Like.liked).label('likes'))
-        .join(models.Like, models.Post.id == models.Like.post_id, isouter=True)
-        .filter(models.Like.liked == True, models.Post.title.icontains(search))
-        .limit(limit)
-        .offset(skip)
-        .group_by(models.Post.id)
-        .all()
-    )
-    
+    posts_likes = db.query(models.Post, func.count(models.Like.liked).label('likes')).join(
+        models.Like, models.Post.id == models.Like.post_id,
+        isouter=True).filter(models.Like.liked == True).group_by(models.Post.id).all()
     print(posts_likes)
     jo = [{"Post": post, "likes": likes} for post, likes in posts_likes]
     print(jo)
@@ -55,32 +42,17 @@ def create_posts(post: CreatePost, db: Session = Depends(get_db), current_user: 
     return new_post
 
 
-@router.get("/posts/{id}", response_model=PostLikesResponse)
-def get_post(
-    id: int, 
-    db: Session = Depends(get_db), 
-    current_user: int = Depends(oauth2.get_current_user)
-    ):
-
+@router.get("/posts/{id}", response_model=PostResponse)
+def get_post(id: int, db: Session = Depends(get_db), current_user: int = Depends(oauth2.get_current_user)):
     print("user email: ", current_user.email)
+    result = db.query(models.Post).filter(models.Post.id == id, models.Post.user_id == current_user.id).first()
     
-    post = (
-        db.query(models.Post, func.count(models.Like.liked).label('likes')) # create a count fuction and name it an alias of 'likes'
-        .join(models.Like, models.Post.id == models.Like.post_id, isouter=True) # join thr Like table with the Post table 
-        .filter(models.Post.id == id, models.Post.user_id == current_user.id) # filter the query for only the currebt user 
-        .group_by(models.Post.id) # group each counted value useing the Post.id
-        .first()
-    )
+    print(result)
 
-    print(post)
-
-    if not post:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail=f"Post with id {id} was not found"
-        )
-    return post
-
+    if not result:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, 
+                            detail=f"post with id: {id} was not found")
+    return result
 
 @router.delete("/posts/{id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_post(id: int, db: Session = Depends(get_db), current_user: int = Depends(oauth2.get_current_user)):
@@ -96,6 +68,8 @@ def delete_post(id: int, db: Session = Depends(get_db), current_user: int = Depe
     post_query.delete(synchronize_session=False)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 
 @router.put('/posts/{id}', response_model=PostResponse)
 def update_post(id: int, post: CreatePost, db: Session = Depends(get_db), current_user: int = Depends(oauth2.get_current_user)):

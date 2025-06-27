@@ -1,34 +1,35 @@
-#password:  Mimie@1419
 from fastapi.security import OAuth2PasswordRequestForm
 from config.utils import verify
 from fastapi import APIRouter, Depends, HTTPException, status
-from requests import Session
-from websockets import Router
-from config.db import get_db
-from config import db, models
-from config.schemas import UserLogin
+from config.database import get_db
+from config import models, schemas
 from sqlalchemy.orm import Session
 from routers.oauth2 import create_access_token
+from config import schemas
 
 router = APIRouter()
 
-@router.post("/login")
-def login(user_credentials: OAuth2PasswordRequestForm, db: Session = Depends(get_db)): #user_credentials stores the username and password
+@router.post("/login", response_model=schemas.Token)
 
-    #Exreact first user that matches the email address
+#OAuth2PasswordRequestForm: is retrieves user credentials
+def login(user_credentials: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    print(OAuth2PasswordRequestForm)
+    
+    # Extract user with matching email (OAuth2PasswordRequestForm uses 'username' for email/username)
     user = db.query(models.Users).filter(models.Users.email == user_credentials.username).first()
 
     if not user:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid Credentials")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid Credentials"
+        )
     
-    # access the verify function which hashes and compare password
-    authentication = verify(user_credentials.password, user.password)
+    # Verify password
+    if not verify(user_credentials.password, user.password):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid Credentials"
+        )
 
-    if not authentication:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid Credentials")
-    
-    # access the create_access_token function
-    access_token = create_access_token(data = {"user_id": user.id})
+    # Generate access token
+    access_token = create_access_token(data={"user_id": user.id})
 
     return {"access_token": access_token, "token_type": "bearer"}
-
